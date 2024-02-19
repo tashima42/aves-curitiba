@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"math"
@@ -174,6 +175,17 @@ func (s *Scrapper) scrapePage() (*WikiAvesPage, error) {
 	wikiAvesPage := &WikiAvesPage{}
 
 	err = decoder.Decode(wikiAvesPage)
+
+	if strings.Contains(err.Error(), "cannot unmarshal number into Go struct field .registros.itens.sp.id of type string") {
+		b, err := io.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+		fixed := strings.Replace(string(b), `"id": 0`, `"id": "0"`, 1)
+		if err := json.Unmarshal([]byte(fixed), wikiAvesPage); err != nil {
+			return nil, err
+		}
+	}
 
 	return wikiAvesPage, err
 }

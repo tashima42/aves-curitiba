@@ -5,7 +5,6 @@ go 1.22.0
 require (
 	github.com/golang-migrate/migrate/v4 v4.17.0
 	github.com/jmoiron/sqlx v1.3.5
-	github.com/tashima42/ellp-manager v0.0.0-20231107012730-d9c4dc04acf0
 	github.com/urfave/cli/v2 v2.27.1
 	modernc.org/sqlite v1.29.1
 )
