@@ -1,6 +1,7 @@
 package scrapper
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -171,21 +172,24 @@ func (s *Scrapper) scrapePage() (*WikiAvesPage, error) {
 	}
 	defer res.Body.Close()
 
-	decoder := json.NewDecoder(res.Body)
+	bodyBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	decoder := json.NewDecoder(bytes.NewBuffer(bodyBytes))
 	wikiAvesPage := &WikiAvesPage{}
 
 	err = decoder.Decode(wikiAvesPage)
-
-	if strings.Contains(err.Error(), "cannot unmarshal number into Go struct field .registros.itens.sp.id of type string") {
-		b, err := io.ReadAll(res.Body)
-		if err != nil {
+	if err != nil {
+		if !strings.Contains(err.Error(), "cannot unmarshal number into Go struct field .registros.itens.sp.id of type string") {
 			return nil, err
-		}
-		fixed := strings.Replace(string(b), `"id": 0`, `"id": "0"`, 1)
-		if err := json.Unmarshal([]byte(fixed), wikiAvesPage); err != nil {
-			return nil, err
+		} else {
+			fixed := strings.Replace(string(bodyBytes), `"id":0`, `"id":"0"`, 1)
+			if err = json.Unmarshal([]byte(fixed), wikiAvesPage); err != nil {
+				return nil, err
+			}
 		}
 	}
-
-	return wikiAvesPage, err
+	return wikiAvesPage, nil
 }
