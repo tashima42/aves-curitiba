@@ -17,8 +17,8 @@ type Registro struct {
 	Perfil      string    `db:"perfil"`
 	Data        time.Time `db:"data"`
 	Questionada bool      `db:"questionada"`
-	Local       bool      `db:"local"`
-	MunicipioID bool      `db:"municipio_id"`
+	Local       string    `db:"local"`
+	MunicipioID int64    `db:"municipio_id"`
 	Comentarios int64     `db:"comentarios"`
 	Likes       int64     `db:"likes"`
 	Views       int64     `db:"views"`
@@ -30,7 +30,7 @@ type Registro struct {
 }
 
 func CreateRegistroTxx(tx *sqlx.Tx, r *Registro) error {
-	query := "INSERT INTO registros(wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7);"
+	query := "INSERT INTO registros(wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);"
 	_, err := tx.Exec(query, r.WaID, r.Tipo, r.UsuarioID, r.EspecieID, r.Autor, r.Por, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Enviado, r.Link, time.Now(), time.Now())
 	return err
 }

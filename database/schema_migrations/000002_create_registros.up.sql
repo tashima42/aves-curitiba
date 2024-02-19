@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS registros (
   id INTEGER PRIMARY KEY,
-  'wa_id' TEXT NOT NULL,
+  'wa_id' TEXT NOT NULL UNIQUE,
   'tipo' TEXT NOT NULL,
   'usuario_id' TEXT NOT NULL,
   'especie_id' INTEGER NOT NULL,
