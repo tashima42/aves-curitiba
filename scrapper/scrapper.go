@@ -32,7 +32,7 @@ func (s *Scrapper) Scrape() error {
 		return err
 	}
 	pages := math.Ceil(float64(s.Total) / float64(s.PerPage))
-
+	pageCounter := 1
 	for i := s.CurrentPage + 1; i <= int64(pages); i++ {
 		slog.Info("running for page: " + strconv.Itoa(int(i)))
 		tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
@@ -53,6 +53,13 @@ func (s *Scrapper) Scrape() error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		var sleepTime time.Duration = 1
+		if pageCounter == 100 {
+			sleepTime = 60
+			pageCounter = 0
+		}
+		time.Sleep(time.Second * sleepTime)
+		pageCounter++
 	}
 	return nil
 }
