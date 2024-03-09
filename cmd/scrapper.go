@@ -26,6 +26,14 @@ func ScrapperCommand() *cli.Command {
 				Aliases:  []string{"a"},
 				EnvVars:  []string{"AUTH_COOKIE"},
 			},
+			&cli.BoolFlag{
+				Name:     "additional-data",
+				Usage:    "Scrape additional data for existing records",
+				Required: false,
+				Value:    false,
+				Aliases:  []string{"t"},
+				EnvVars:  []string{"ADDITIONAL_DATA"},
+			},
 		},
 		Action: run,
 	}
@@ -38,13 +46,16 @@ func run(c *cli.Context) error {
 	}
 	defer database.Close(db)
 
-	return runScrapper(db, c.String("auth-cookie"))
+	return runScrapper(db, c.String("auth-cookie"), c.Bool("additional-data"))
 }
 
-func runScrapper(db *sqlx.DB, authCookie string) error {
+func runScrapper(db *sqlx.DB, authCookie string, additionalData bool) error {
 	sc := scrapper.Scrapper{
 		DB:         db,
 		AuthCookie: authCookie,
+	}
+	if additionalData {
+		return sc.ScrapeAdditionalData()
 	}
 	return sc.Scrape()
 }

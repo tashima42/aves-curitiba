@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/jmoiron/sqlx"
 	"github.com/tashima42/aves-curitiba/database"
 )
@@ -64,6 +65,45 @@ func (s *Scrapper) Scrape() error {
 		pageCounter++
 	}
 	return nil
+}
+
+func (s *Scrapper) ScrapeAdditionalData() error {
+	_, err := s.scrapeAdditionalPageData()
+	return err
+	// if err := s.getData(); err != nil {
+	// 	return err
+	// }
+	// pages := math.Ceil(float64(s.Total) / float64(s.PerPage))
+	// pageCounter := 1
+	// for i := s.CurrentPage + 1; i <= int64(pages); i++ {
+	// 	slog.Info("running for page: " + strconv.Itoa(int(i)))
+	// 	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	p, err := s.scrapePage()
+	// 	if err != nil {
+	// 		log.Fatal("failed to scrape page: " + err.Error())
+	// 	}
+	// 	if err := s.savePage(tx, p); err != nil {
+	// 		return err
+	// 	}
+	// 	if err := database.SetScrapperCurrentPageByIDTxx(tx, defaultScrapperID, i); err != nil {
+	// 		return err
+	// 	}
+	// 	s.CurrentPage = i
+	// 	if err := tx.Commit(); err != nil {
+	// 		return err
+	// 	}
+	// 	var sleepTime time.Duration = 1
+	// 	if pageCounter == 100 {
+	// 		sleepTime = 60
+	// 		pageCounter = 0
+	// 	}
+	// 	time.Sleep(time.Second * sleepTime)
+	// 	pageCounter++
+	// }
+	// return nil
 }
 
 func (s *Scrapper) getData() error {
@@ -192,4 +232,44 @@ func (s *Scrapper) scrapePage() (*WikiAvesPage, error) {
 		}
 	}
 	return wikiAvesPage, nil
+}
+
+func (s *Scrapper) scrapeAdditionalPageData() (*WikiAvesAdditionalData, error) {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", "https://www.wikiaves.com/_midia_detalhes.php?m=5920941", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Cookie", s.AuthCookie)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Referer", "https://www.wikiaves.com/midias.php?t=u&u=50609")
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("sec-ch-ua", `"Not(A:Brand";v="24", "Chromium";v="122"`)
+	req.Header.Set("sec-ch-ua-mobile", "?0")
+	req.Header.Set("sec-ch-ua-platform", `"macOS"`)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return getAdditionalDataFromHTML(resp.Body)
+}
+
+func getAdditionalDataFromHTML(body io.ReadCloser) (*WikiAvesAdditionalData, error) {
+	doc, err := goquery.NewDocumentFromReader(body)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println(doc.Find(".tipoLocalLOV").Text())
+	fmt.Println(doc.Find(".tipoLocal").Text())
+	return nil, nil
 }

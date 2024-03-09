@@ -33,3 +33,9 @@ type WikiAvesPage struct {
 		Itens  map[string]WikiAvesItem `json:"itens,omitempty"`
 	} `json:"registros,omitempty"`
 }
+
+type WikiAvesAdditionalData struct {
+	LocationName string
+	LocationType string
+	Camera       string
+}
