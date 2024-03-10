@@ -39,3 +39,12 @@ type WikiAvesAdditionalData struct {
 	LocationType string
 	Camera       string
 }
+
+type AdditionalData struct {
+	Nome      string
+	Especie   string
+	Data      string
+	Publicada string
+	Local     string
+	Autor     string
+}

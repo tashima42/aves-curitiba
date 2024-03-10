@@ -31,6 +31,14 @@ type Registro struct {
 	UpdatedAt   time.Time `db:"updated_at"`
 }
 
+type RegistroCustom struct {
+	ID        int64
+	Data      string
+	Autor     string
+	Especie   string
+	LocalNome string
+}
+
 func CreateRegistroTxx(tx *sqlx.Tx, r *Registro) error {
 	query := "INSERT INTO registros_filtered_2(id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);"
 	_, err := tx.Exec(query, r.ID, r.WaID, r.Tipo, r.UsuarioID, r.EspecieID, r.Autor, r.Por, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Enviado, r.Link, time.Now(), time.Now())
@@ -53,4 +61,28 @@ func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
 		return nil, err
 	}
 	return registros, nil
+}
+
+func GetFilteredRegistrosTxx(tx *sqlx.Tx) ([]*RegistroCustom, error) {
+	var registros []*RegistroCustom
+	query := "SELECT r.id, r.\"data\", r.autor, e.nvt FROM registros_filtered r INNER JOIN especies e ON r.especie_id = e.id WHERE r.\"data\" BETWEEN  \"2022-01-01\" AND \"2023-12-31\";"
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		registro := new(RegistroCustom)
+		rows.Scan(&registro.ID, &registro.Data, &registro.Autor, &registro.Especie)
+		registros = append(registros, registro)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return registros, nil
+}
+
+func UpdateLocalTxx(tx *sqlx.Tx, r *RegistroCustom) error {
+	query := "UPDATE registros_filtered SET local_nome = $1 WHERE id = $2"
+	_, err := tx.Exec(query, r.LocalNome, r.ID)
+	return err
 }

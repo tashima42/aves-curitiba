@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -272,4 +274,66 @@ func getAdditionalDataFromHTML(body io.ReadCloser) (*WikiAvesAdditionalData, err
 	fmt.Println(doc.Find(".tipoLocalLOV").Text())
 	fmt.Println(doc.Find(".tipoLocal").Text())
 	return nil, nil
+}
+
+func (s *Scrapper) CSVAdditionalData(fileLocation string) error {
+	f, err := os.ReadFile(fileLocation)
+	if err != nil {
+		return err
+	}
+	additionalDatas := []AdditionalData{}
+	r := csv.NewReader(bytes.NewBuffer(f))
+	for {
+		record, err := r.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		if record[4] == "Curitiba" {
+			continue
+		}
+		ad := AdditionalData{
+			Nome:      strings.TrimSpace(record[0]),
+			Especie:   strings.TrimSpace(record[1]),
+			Data:      record[2],
+			Publicada: record[3],
+			Local:     record[4],
+			Autor:     strings.TrimSpace(record[5]),
+		}
+		additionalDatas = append(additionalDatas, ad)
+	}
+
+	additionalMap := map[string]string{}
+	for _, a := range additionalDatas {
+		key := fmt.Sprintf("%s-%s-%s", a.Nome, a.Data, strings.ToLower(strings.ReplaceAll(a.Autor, " ", "")))
+		slog.Info(key)
+		additionalMap[key] = a.Local
+	}
+
+	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	registros, err := database.GetFilteredRegistrosTxx(tx)
+	if err != nil {
+		return err
+	}
+	for _, r := range registros {
+		registro := *r
+		key := fmt.Sprintf("%s-%s-%s", registro.Especie, strings.TrimSuffix(registro.Data, "T00:00:00Z"), strings.ToLower(strings.ReplaceAll(registro.Autor, " ", "")))
+		// slog.Info(key)
+		local, ok := additionalMap[key]
+		if !ok {
+			continue
+		}
+		slog.Info("FOUND!: " + key)
+		r.LocalNome = local
+		database.UpdateLocalTxx(tx, r)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
 }

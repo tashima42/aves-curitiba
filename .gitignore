@@ -24,3 +24,4 @@ go.work
 *.db
 *.db-journal
 *.db.old
+*.csv
