@@ -18,7 +18,9 @@ type Registro struct {
 	Data        time.Time `db:"data"`
 	Questionada bool      `db:"questionada"`
 	Local       string    `db:"local"`
-	MunicipioID int64    `db:"municipio_id"`
+	LocalNome   string    `db:"local_nome"`
+	LocalTipo   string    `db:"local_tipo"`
+	MunicipioID int64     `db:"municipio_id"`
 	Comentarios int64     `db:"comentarios"`
 	Likes       int64     `db:"likes"`
 	Views       int64     `db:"views"`
@@ -30,7 +32,25 @@ type Registro struct {
 }
 
 func CreateRegistroTxx(tx *sqlx.Tx, r *Registro) error {
-	query := "INSERT INTO registros(wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);"
-	_, err := tx.Exec(query, r.WaID, r.Tipo, r.UsuarioID, r.EspecieID, r.Autor, r.Por, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Enviado, r.Link, time.Now(), time.Now())
+	query := "INSERT INTO registros_filtered_2(id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);"
+	_, err := tx.Exec(query, r.ID, r.WaID, r.Tipo, r.UsuarioID, r.EspecieID, r.Autor, r.Por, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Enviado, r.Link, time.Now(), time.Now())
 	return err
+}
+
+func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
+	var registros []*Registro
+	query := "SELECT id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, \"data\", questionada, \"local\", local_nome, local_tipo, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at FROM registros_filtered;"
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		registro := new(Registro)
+		rows.Scan(&registro.ID, &registro.WaID, &registro.Tipo, &registro.UsuarioID, &registro.EspecieID, &registro.Autor, &registro.Por, &registro.Perfil, &registro.Data, &registro.Questionada, &registro.Local, &registro.LocalNome, &registro.LocalTipo, &registro.MunicipioID, &registro.Comentarios, &registro.Likes, &registro.Views, &registro.Grande, &registro.Enviado, &registro.Link, &registro.CreatedAt, &registro.UpdatedAt)
+		registros = append(registros, registro)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return registros, nil
 }

@@ -16,7 +16,7 @@ func main() {
 		Usage:                  "control and run the aves-curitiba scrapper",
 		UseShortOptionHandling: true,
 		Version:                version,
-		Commands:               []*cli.Command{cmd.DBCommand(), cmd.ScrapperCommand()},
+		Commands:               []*cli.Command{cmd.DBCommand(), cmd.ScrapperCommand(), cmd.FilterCommand()},
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
