@@ -37,6 +37,7 @@ type RegistroCustom struct {
 	Autor     string
 	Especie   string
 	LocalNome string
+	LocalTipo string
 }
 
 func CreateRegistroTxx(tx *sqlx.Tx, r *Registro) error {
@@ -82,7 +83,26 @@ func GetFilteredRegistrosTxx(tx *sqlx.Tx) ([]*RegistroCustom, error) {
 }
 
 func UpdateLocalTxx(tx *sqlx.Tx, r *RegistroCustom) error {
-	query := "UPDATE registros_filtered SET local_nome = $1 WHERE id = $2"
-	_, err := tx.Exec(query, r.LocalNome, r.ID)
+	query := "UPDATE registros_filtered SET local_nome = $1, local_tipo = $2 WHERE id = $3;"
+	_, err := tx.Exec(query, r.LocalNome, r.LocalTipo, r.ID)
 	return err
+}
+
+func GetNoLocalRegistrosTxx(tx *sqlx.Tx, limit int, skip int) ([]*Registro, error) {
+	var registros []*Registro
+	query := "SELECT r.id, r.wa_id FROM registros_filtered r WHERE r.local_nome IS NULL ORDER BY r.wa_id DESC LIMIT $1, $2;"
+	// query := "SELECT r.id, r.wa_id FROM registros_filtered r WHERE r.wa_id = 5405787;"
+	rows, err := tx.Query(query, skip, limit)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		registro := new(Registro)
+		rows.Scan(&registro.ID, &registro.WaID)
+		registros = append(registros, registro)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return registros, nil
 }

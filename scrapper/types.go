@@ -37,7 +37,6 @@ type WikiAvesPage struct {
 type WikiAvesAdditionalData struct {
 	LocationName string
 	LocationType string
-	Camera       string
 }
 
 type AdditionalData struct {

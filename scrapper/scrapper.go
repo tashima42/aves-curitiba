@@ -70,42 +70,51 @@ func (s *Scrapper) Scrape() error {
 }
 
 func (s *Scrapper) ScrapeAdditionalData() error {
-	_, err := s.scrapeAdditionalPageData()
-	return err
-	// if err := s.getData(); err != nil {
-	// 	return err
-	// }
-	// pages := math.Ceil(float64(s.Total) / float64(s.PerPage))
-	// pageCounter := 1
-	// for i := s.CurrentPage + 1; i <= int64(pages); i++ {
-	// 	slog.Info("running for page: " + strconv.Itoa(int(i)))
-	// 	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	p, err := s.scrapePage()
-	// 	if err != nil {
-	// 		log.Fatal("failed to scrape page: " + err.Error())
-	// 	}
-	// 	if err := s.savePage(tx, p); err != nil {
-	// 		return err
-	// 	}
-	// 	if err := database.SetScrapperCurrentPageByIDTxx(tx, defaultScrapperID, i); err != nil {
-	// 		return err
-	// 	}
-	// 	s.CurrentPage = i
-	// 	if err := tx.Commit(); err != nil {
-	// 		return err
-	// 	}
-	// 	var sleepTime time.Duration = 1
-	// 	if pageCounter == 100 {
-	// 		sleepTime = 60
-	// 		pageCounter = 0
-	// 	}
-	// 	time.Sleep(time.Second * sleepTime)
-	// 	pageCounter++
-	// }
-	// return nil
+	if err := s.getData(); err != nil {
+		return err
+	}
+	scr, err := database.GetScrapperByID(context.Background(), s.DB, 1)
+	if err != nil {
+		return err
+	}
+	skip := scr.CurrentPage
+	limit := 10
+
+	for skip <= scr.Total {
+		tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+		if err != nil {
+			return err
+		}
+		slog.Info("getting more registros, skip: " + strconv.Itoa(int(skip)))
+		registros, err := database.GetNoLocalRegistrosTxx(tx, limit, int(skip))
+		if err != nil {
+			return err
+		}
+		for _, re := range registros {
+			skip += 1
+			if err := database.SetScrapperCurrentPageByIDTxx(tx, defaultScrapperID, skip); err != nil {
+				return err
+			}
+			time.Sleep(time.Second * 1)
+			slog.Info("running for wa_id: " + strconv.Itoa(int(re.WaID)))
+			additional, err := s.scrapeAdditionalPageData(re.WaID)
+			if err != nil {
+				log.Fatal("failed to scrape data: " + err.Error())
+				return err
+			}
+			if additional == nil {
+				continue
+			}
+			slog.Info("found for wa_id: " + strconv.Itoa(int(re.WaID)))
+			if err := database.UpdateLocalTxx(tx, &database.RegistroCustom{ID: re.ID, LocalNome: additional.LocationName, LocalTipo: additional.LocationType}); err != nil {
+				return err
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Scrapper) getData() error {
@@ -236,9 +245,9 @@ func (s *Scrapper) scrapePage() (*WikiAvesPage, error) {
 	return wikiAvesPage, nil
 }
 
-func (s *Scrapper) scrapeAdditionalPageData() (*WikiAvesAdditionalData, error) {
+func (s *Scrapper) scrapeAdditionalPageData(id int64) (*WikiAvesAdditionalData, error) {
 	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://www.wikiaves.com/_midia_detalhes.php?m=5920941", nil)
+	req, err := http.NewRequest("GET", "https://www.wikiaves.com/_midia_detalhes.php?m="+strconv.Itoa(int(id)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -271,9 +280,12 @@ func getAdditionalDataFromHTML(body io.ReadCloser) (*WikiAvesAdditionalData, err
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(doc.Find(".tipoLocalLOV").Text())
-	fmt.Println(doc.Find(".tipoLocal").Text())
-	return nil, nil
+	local := doc.Find(".tipoLocalLOV").Text()
+	localTipo := doc.Find(".tipoLocal").Text()
+	if local == "" {
+		return nil, nil
+	}
+	return &WikiAvesAdditionalData{LocationName: local, LocationType: localTipo}, nil
 }
 
 func (s *Scrapper) CSVAdditionalData(fileLocation string) error {
