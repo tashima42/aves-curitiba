@@ -37,7 +37,7 @@ func ScrapperCommand() *cli.Command {
 					}
 					defer database.Close(db)
 
-					return runScrapper(db, c.String("auth-cookie"), false)
+					return runScrapper(db, c.String("auth-cookie"), false, "")
 				},
 			},
 			{
@@ -57,6 +57,13 @@ func ScrapperCommand() *cli.Command {
 						Aliases:  []string{"a"},
 						EnvVars:  []string{"AUTH_COOKIE"},
 					},
+					&cli.StringFlag{
+						Name:     "write-path",
+						Usage:    "write path",
+						Required: true,
+						Aliases:  []string{"w"},
+						EnvVars:  []string{"WRITE_PATH"},
+					},
 				},
 				Action: func(c *cli.Context) error {
 					db, err := database.Open(c.String("db-path"), false)
@@ -65,11 +72,11 @@ func ScrapperCommand() *cli.Command {
 					}
 					defer database.Close(db)
 
-					return runScrapper(db, c.String("auth-cookie"), true)
+					return runScrapper(db, c.String("auth-cookie"), true, c.String("write-path"))
 				},
 			},
 			{
-				Name: "csv",
+				Name: "html",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "db-path",
@@ -79,10 +86,11 @@ func ScrapperCommand() *cli.Command {
 						EnvVars:  []string{"DB_PATH"},
 					},
 					&cli.StringFlag{
-						Name:     "csv-path",
+						Name:     "html-path",
+						Usage:    "path for the html files",
 						Required: true,
-						Aliases:  []string{"c"},
-						EnvVars:  []string{"CSV_PATH"},
+						Aliases:  []string{"p"},
+						EnvVars:  []string{"HTML_PATH"},
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -91,18 +99,22 @@ func ScrapperCommand() *cli.Command {
 						return err
 					}
 					defer database.Close(db)
-					sc := scrapper.Scrapper{DB: db}
-					return sc.CSVAdditionalData(c.String("csv-path"))
+					sc := scrapper.Scrapper{
+						DB:       db,
+						HTMLPath: c.String("html-path"),
+					}
+					return sc.ScrapeHTML()
 				},
 			},
 		},
 	}
 }
 
-func runScrapper(db *sqlx.DB, authCookie string, additionalData bool) error {
+func runScrapper(db *sqlx.DB, authCookie string, additionalData bool, writeToPath string) error {
 	sc := scrapper.Scrapper{
-		DB:         db,
-		AuthCookie: authCookie,
+		DB:          db,
+		AuthCookie:  authCookie,
+		WriteToPath: writeToPath,
 	}
 	if additionalData {
 		return sc.ScrapeAdditionalData()

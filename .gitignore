@@ -25,3 +25,5 @@ go.work
 *.db-journal
 *.db.old
 *.csv
+
+scrapped/

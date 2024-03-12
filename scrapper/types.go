@@ -34,11 +34,6 @@ type WikiAvesPage struct {
 	} `json:"registros,omitempty"`
 }
 
-type WikiAvesAdditionalData struct {
-	LocationName string
-	LocationType string
-}
-
 type AdditionalData struct {
 	Nome      string
 	Especie   string
@@ -46,4 +41,15 @@ type AdditionalData struct {
 	Publicada string
 	Local     string
 	Autor     string
+}
+
+type HTMLData struct {
+	Assunto          string
+	Acao             string
+	Sexo             string
+	Idade            string
+	ObservacoesAutor string
+	Camera           string
+	LocalNome        string
+	LocalTipo        string
 }

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +12,10 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -30,6 +31,8 @@ type Scrapper struct {
 	Total       int64
 	CurrentPage int64
 	PerPage     int64
+	WriteToPath string
+	HTMLPath    string
 }
 
 func (s *Scrapper) Scrape() error {
@@ -58,12 +61,12 @@ func (s *Scrapper) Scrape() error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
-		var sleepTime time.Duration = 1
+		var sleepTime time.Duration = 500
 		if pageCounter == 100 {
 			sleepTime = 60
 			pageCounter = 0
 		}
-		time.Sleep(time.Second * sleepTime)
+		time.Sleep(time.Millisecond * sleepTime)
 		pageCounter++
 	}
 	return nil
@@ -78,7 +81,7 @@ func (s *Scrapper) ScrapeAdditionalData() error {
 		return err
 	}
 	skip := scr.CurrentPage
-	limit := 10
+	limit := 1
 
 	for skip <= scr.Total {
 		tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
@@ -86,7 +89,7 @@ func (s *Scrapper) ScrapeAdditionalData() error {
 			return err
 		}
 		slog.Info("getting more registros, skip: " + strconv.Itoa(int(skip)))
-		registros, err := database.GetNoLocalRegistrosTxx(tx, limit, int(skip))
+		registros, err := database.GetNoLocalRegistrosTxx(tx, limit)
 		if err != nil {
 			return err
 		}
@@ -97,21 +100,60 @@ func (s *Scrapper) ScrapeAdditionalData() error {
 			}
 			time.Sleep(time.Second * 1)
 			slog.Info("running for wa_id: " + strconv.Itoa(int(re.WaID)))
-			additional, err := s.scrapeAdditionalPageData(re.WaID)
-			if err != nil {
-				log.Fatal("failed to scrape data: " + err.Error())
+			if err := s.scrapeAdditionalPageData(re.WaID, s.WriteToPath); err != nil {
 				return err
 			}
-			if additional == nil {
-				continue
-			}
-			slog.Info("found for wa_id: " + strconv.Itoa(int(re.WaID)))
-			if err := database.UpdateLocalTxx(tx, &database.RegistroCustom{ID: re.ID, LocalNome: additional.LocationName, LocalTipo: additional.LocationType}); err != nil {
+			if err := database.SetScrappedTxx(tx, re.ID); err != nil {
 				return err
 			}
 		}
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (s *Scrapper) ScrapeHTML() error {
+	const limit = 10
+	stillHasRecords := true
+	for stillHasRecords {
+		slog.Info("getting more registros")
+		registros, err := database.GetNoLocalRegistros(context.Background(), s.DB, limit)
+		if err != nil {
+			return err
+		}
+		var wg sync.WaitGroup
+		for _, re := range registros {
+			wg.Add(1)
+			go func(htmlBasePath string) {
+				defer wg.Done()
+				tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+				if err != nil {
+					log.Fatal("failed to start transaction" + err.Error())
+				}
+				slog.Info("running for wa_id: " + strconv.Itoa(int(re.WaID)))
+				additional, err := getAdditionalDataFromHTML(filepath.Join(htmlBasePath, strconv.Itoa(int(re.WaID))+".html"))
+				if err != nil {
+					log.Fatal("failed to scrape data: " + err.Error())
+				}
+				re.Assunto = additional.Assunto
+				re.Acao = additional.Acao
+				re.Sexo = additional.Sexo
+				re.Idade = additional.Idade
+				re.Observacoes = additional.ObservacoesAutor
+				re.Camera = additional.Camera
+				re.LocalNome = additional.LocalNome
+				re.LocalTipo = additional.LocalTipo
+				re.Scrapped = true
+				slog.Info("found for wa_id: " + strconv.Itoa(int(re.WaID)))
+				if err := database.AddAdditionalInfoTxx(tx, re); err != nil {
+					log.Fatal("failed to add additional info" + err.Error())
+				}
+				if err := tx.Commit(); err != nil {
+					log.Fatal("failed to commit tx: " + err.Error())
+				}
+			}(s.HTMLPath)
 		}
 	}
 	return nil
@@ -245,11 +287,11 @@ func (s *Scrapper) scrapePage() (*WikiAvesPage, error) {
 	return wikiAvesPage, nil
 }
 
-func (s *Scrapper) scrapeAdditionalPageData(id int64) (*WikiAvesAdditionalData, error) {
+func (s *Scrapper) scrapeAdditionalPageData(id int64, writeToPath string) error {
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", "https://www.wikiaves.com/_midia_detalhes.php?m="+strconv.Itoa(int(id)), nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	req.Header.Set("Cookie", s.AuthCookie)
 	req.Header.Set("Accept", "*/*")
@@ -269,83 +311,37 @@ func (s *Scrapper) scrapeAdditionalPageData(id int64) (*WikiAvesAdditionalData, 
 	req.Header.Set("sec-ch-ua-platform", `"macOS"`)
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
-	return getAdditionalDataFromHTML(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(writeToPath, strconv.Itoa(int(id))+".html"), body, 0777)
 }
 
-func getAdditionalDataFromHTML(body io.ReadCloser) (*WikiAvesAdditionalData, error) {
-	doc, err := goquery.NewDocumentFromReader(body)
+func getAdditionalDataFromHTML(htmlPath string) (*HTMLData, error) {
+	body, err := os.ReadFile(htmlPath)
 	if err != nil {
 		return nil, err
 	}
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	data := HTMLData{}
+	doc.Find(".wa-lista-detalhes > div:not(.float-right, .row, #divDetalhesBotao, #divDetalhes)").Each(func(i int, s *goquery.Selection) {
+		log.Print(i, s.Text())
+	})
 	local := doc.Find(".tipoLocalLOV").Text()
+	if local != "" {
+		data.LocalNome = local
+	}
 	localTipo := doc.Find(".tipoLocal").Text()
-	if local == "" {
-		return nil, nil
+	if localTipo != "" {
+		data.LocalTipo = localTipo
 	}
-	return &WikiAvesAdditionalData{LocationName: local, LocationType: localTipo}, nil
-}
-
-func (s *Scrapper) CSVAdditionalData(fileLocation string) error {
-	f, err := os.ReadFile(fileLocation)
-	if err != nil {
-		return err
-	}
-	additionalDatas := []AdditionalData{}
-	r := csv.NewReader(bytes.NewBuffer(f))
-	for {
-		record, err := r.Read()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-		if record[4] == "Curitiba" {
-			continue
-		}
-		ad := AdditionalData{
-			Nome:      strings.TrimSpace(record[0]),
-			Especie:   strings.TrimSpace(record[1]),
-			Data:      record[2],
-			Publicada: record[3],
-			Local:     record[4],
-			Autor:     strings.TrimSpace(record[5]),
-		}
-		additionalDatas = append(additionalDatas, ad)
-	}
-
-	additionalMap := map[string]string{}
-	for _, a := range additionalDatas {
-		key := fmt.Sprintf("%s-%s-%s", a.Nome, a.Data, strings.ToLower(strings.ReplaceAll(a.Autor, " ", "")))
-		slog.Info(key)
-		additionalMap[key] = a.Local
-	}
-
-	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
-	if err != nil {
-		return err
-	}
-	registros, err := database.GetFilteredRegistrosTxx(tx)
-	if err != nil {
-		return err
-	}
-	for _, r := range registros {
-		registro := *r
-		key := fmt.Sprintf("%s-%s-%s", registro.Especie, strings.TrimSuffix(registro.Data, "T00:00:00Z"), strings.ToLower(strings.ReplaceAll(registro.Autor, " ", "")))
-		// slog.Info(key)
-		local, ok := additionalMap[key]
-		if !ok {
-			continue
-		}
-		slog.Info("FOUND!: " + key)
-		r.LocalNome = local
-		database.UpdateLocalTxx(tx, r)
-	}
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	return nil
+	return &data, nil
 }
