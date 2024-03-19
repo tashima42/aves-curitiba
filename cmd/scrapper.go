@@ -103,7 +103,9 @@ func ScrapperCommand() *cli.Command {
 						DB:       db,
 						HTMLPath: c.String("html-path"),
 					}
+					// return nil
 					return sc.ScrapeHTML()
+					// return scrapper.Test()
 				},
 			},
 		},

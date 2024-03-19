@@ -1,5 +1,7 @@
 package scrapper
 
+import "time"
+
 type WikiAvesItem struct {
 	ID        int    `json:"id"`
 	Tipo      string `json:"tipo"`
@@ -50,6 +52,7 @@ type HTMLData struct {
 	Idade            string
 	ObservacoesAutor string
 	Camera           string
+	DataPublicacao   time.Time
 	LocalNome        string
 	LocalTipo        string
 }

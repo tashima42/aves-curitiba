@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -115,45 +114,44 @@ func (s *Scrapper) ScrapeAdditionalData() error {
 }
 
 func (s *Scrapper) ScrapeHTML() error {
-	const limit = 10
-	stillHasRecords := true
-	for stillHasRecords {
+	const limit = 50
+	for {
 		slog.Info("getting more registros")
-		registros, err := database.GetNoLocalRegistros(context.Background(), s.DB, limit)
+		registros, err := database.GetFilteredRegistros(context.Background(), s.DB, limit)
 		if err != nil {
 			return err
 		}
-		var wg sync.WaitGroup
+		log.Print(registros)
+		if len(registros) < 1 {
+			break
+		}
+		tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+		if err != nil {
+			log.Fatal("failed to start transaction" + err.Error())
+		}
 		for _, re := range registros {
-			wg.Add(1)
-			go func(htmlBasePath string) {
-				defer wg.Done()
-				tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
-				if err != nil {
-					log.Fatal("failed to start transaction" + err.Error())
-				}
-				slog.Info("running for wa_id: " + strconv.Itoa(int(re.WaID)))
-				additional, err := getAdditionalDataFromHTML(filepath.Join(htmlBasePath, strconv.Itoa(int(re.WaID))+".html"))
-				if err != nil {
-					log.Fatal("failed to scrape data: " + err.Error())
-				}
-				re.Assunto = additional.Assunto
-				re.Acao = additional.Acao
-				re.Sexo = additional.Sexo
-				re.Idade = additional.Idade
-				re.Observacoes = additional.ObservacoesAutor
-				re.Camera = additional.Camera
-				re.LocalNome = additional.LocalNome
-				re.LocalTipo = additional.LocalTipo
-				re.Scrapped = true
-				slog.Info("found for wa_id: " + strconv.Itoa(int(re.WaID)))
-				if err := database.AddAdditionalInfoTxx(tx, re); err != nil {
-					log.Fatal("failed to add additional info" + err.Error())
-				}
-				if err := tx.Commit(); err != nil {
-					log.Fatal("failed to commit tx: " + err.Error())
-				}
-			}(s.HTMLPath)
+			slog.Info("running for wa_id: " + strconv.Itoa(int(re.WaID)))
+			additional, err := getAdditionalDataFromHTML(filepath.Join(s.HTMLPath, strconv.Itoa(int(re.WaID))+".html"))
+			if err != nil {
+				log.Fatal("failed to scrape data: " + err.Error())
+			}
+			re.DataPublicacao = additional.DataPublicacao
+			// re.Assunto = additional.Assunto
+			// re.Acao = additional.Acao
+			// re.Sexo = additional.Sexo
+			// re.Idade = additional.Idade
+			// re.Observacoes = additional.ObservacoesAutor
+			// re.Camera = additional.Camera
+			// re.LocalNome = additional.LocalNome
+			// re.LocalTipo = additional.LocalTipo
+			re.Scrapped = true
+			slog.Info("found for wa_id: " + strconv.Itoa(int(re.WaID)))
+			if err := database.AddADataPublicacaoInfoTxx(tx, re); err != nil {
+				log.Fatal("failed to add additional info " + err.Error())
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			log.Fatal("failed to commit tx: " + err.Error())
 		}
 	}
 	return nil
@@ -333,15 +331,48 @@ func getAdditionalDataFromHTML(htmlPath string) (*HTMLData, error) {
 
 	data := HTMLData{}
 	doc.Find(".wa-lista-detalhes > div:not(.float-right, .row, #divDetalhesBotao, #divDetalhes)").Each(func(i int, s *goquery.Selection) {
-		log.Print(i, s.Text())
+		log.Print(s.Text())
+		if strings.Contains(s.Text(), "Publicada") {
+			dataPublicacao, err := time.Parse("02/01/2006", strings.TrimPrefix(s.Text(), "Publicada em:\xc2\xa0"))
+			if err != nil {
+				log.Fatal(err)
+			}
+			data.DataPublicacao = dataPublicacao
+		}
+		// if strings.Contains(s.Text(), "Câmera") {
+		// 	data.Camera = strings.TrimPrefix(s.Text(), "Câmera:")
+		// } else if strings.Contains(s.Text(), "Idade") {
+		// 	data.Idade = strings.TrimPrefix(s.Text(), "Idade:")
+		// } else if strings.Contains(s.Text(), "Sexo") {
+		// 	data.Sexo = strings.TrimPrefix(s.Text(), "Sexo:")
+		// } else if strings.Contains(s.Text(), "Assunto") {
+		// 	data.Assunto = strings.TrimPrefix(s.Text(), "Assunto(s):")
+		// } else if strings.Contains(s.Text(), "Ação") {
+		// 	data.Acao = strings.TrimPrefix(s.Text(), "Ação principal:")
+		// } else if strings.Contains(s.Text(), "Observações") {
+		// 	data.ObservacoesAutor = strings.TrimPrefix(s.Text(), "Observações do autor:")
+		// }
 	})
-	local := doc.Find(".tipoLocalLOV").Text()
-	if local != "" {
-		data.LocalNome = local
-	}
-	localTipo := doc.Find(".tipoLocal").Text()
-	if localTipo != "" {
-		data.LocalTipo = localTipo
-	}
+	// local := doc.Find(".tipoLocalLOV").Text()
+	// if local != "" {
+	// 	data.LocalNome = local
+	// }
+	// localTipo := doc.Find(".tipoLocal").Text()
+	// if localTipo != "" {
+	// 	data.LocalTipo = localTipo
+	// }
 	return &data, nil
 }
+
+// func Test() error {
+// 	dir, err := os.Getwd()
+// 	if err != nil {
+// 		return err
+// 	}
+// 	additional, err := getAdditionalDataFromHTML(filepath.Join(dir, "scrapped", "4592802.html"))
+// 	if err != nil {
+// 		return err
+// 	}
+// 	log.Printf("\n\n%+v", additional)
+// 	return nil
+// }
