@@ -51,12 +51,18 @@ type RegistroCustom struct {
 }
 
 func CreateRegistroTxx(tx *sqlx.Tx, r *Registro) error {
-	query := "INSERT INTO registros_filtered_2(id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, data_publicacao, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21);"
+	query := "INSERT INTO registros_filtered (id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, data, questionada, local, municipio_id, comentarios, likes, views, grande, enviado, link, data_publicacao, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21);"
 	_, err := tx.Exec(query, r.ID, r.WaID, r.Tipo, r.UsuarioID, r.EspecieID, r.Autor, r.Por, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Enviado, r.Link, r.DataPublicacao, time.Now(), time.Now())
 	return err
 }
 
-func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
+func CreateRegistroFiltered2Txx(tx *sqlx.Tx, r *Registro) error {
+	query := "INSERT INTO registros_filtered_2 (id, wa_id, tipo, especie_id, autor, perfil, \"data\", questionada, \"local\", municipio_id, comentarios, likes, views, grande, link, created_at, updated_at) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);"
+	_, err := tx.Exec(query, r.ID, r.WaID, r.Tipo, r.EspecieID, r.Autor, r.Perfil, r.Data, r.Questionada, r.Local, r.MunicipioID, r.Comentarios, r.Likes, r.Views, r.Grande, r.Link, r.CreatedAt, time.Now())
+	return err
+}
+
+func GetRegistrosFilteredTxx(tx *sqlx.Tx) ([]*Registro, error) {
 	var registros []*Registro
 	query := "SELECT id, wa_id, tipo, usuario_id, especie_id, autor, por, perfil, \"data\", questionada, \"local\", local_nome, local_tipo, municipio_id, comentarios, likes, views, grande, enviado, link, created_at, updated_at FROM registros_filtered;"
 	rows, err := tx.Query(query)
@@ -67,6 +73,24 @@ func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
 		registro := new(Registro)
 		rows.Scan(&registro.ID, &registro.WaID, &registro.Tipo, &registro.UsuarioID, &registro.EspecieID, &registro.Autor, &registro.Por, &registro.Perfil, &registro.Data, &registro.Questionada, &registro.Local, &registro.LocalNome, &registro.LocalTipo, &registro.MunicipioID, &registro.Comentarios, &registro.Likes, &registro.Views, &registro.Grande, &registro.Enviado, &registro.Link, &registro.CreatedAt, &registro.UpdatedAt)
 		registros = append(registros, registro)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return registros, nil
+}
+
+func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
+	var registros []*Registro
+	query := "SELECT id, wa_id, tipo, especie_id, autor, perfil, \"data\", questionada, \"local\", municipio_id, comentarios, likes, views, grande, link, created_at, updated_at FROM registros WHERE questionada = FALSE AND especie_id != 335 AND \"data\" BETWEEN  \"2009-01-01\" AND \"2018-12-31\";"
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var registro Registro
+		rows.Scan(&registro.ID, &registro.WaID, &registro.Tipo, &registro.EspecieID, &registro.Autor, &registro.Perfil, &registro.Data, &registro.Questionada, &registro.Local, &registro.MunicipioID, &registro.Comentarios, &registro.Likes, &registro.Views, &registro.Grande, &registro.Link, &registro.CreatedAt, &registro.UpdatedAt)
+		registros = append(registros, &registro)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

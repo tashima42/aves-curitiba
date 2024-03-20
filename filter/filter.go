@@ -33,7 +33,7 @@ func (f *Filter) Filter() error {
 			continue
 		}
 		alreadyRegistered[key] = true
-		database.CreateRegistroTxx(tx, r)
+		database.CreateRegistroFiltered2Txx(tx, r)
 	}
 	if err := tx.Commit(); err != nil {
 		return err
