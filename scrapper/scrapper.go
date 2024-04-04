@@ -113,6 +113,70 @@ func (s *Scrapper) ScrapeAdditionalData() error {
 	return nil
 }
 
+func (s *Scrapper) ScrapeAutoresHTML() error {
+	entries, err := os.ReadDir(s.WriteToPath)
+	if err != nil {
+		return err
+	}
+	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		perfil := strings.TrimSuffix(entry.Name(), ".html")
+		autor, err := database.GetAutorInfoByPerfilTxx(tx, perfil)
+		if err != nil {
+			return err
+		}
+		log.Println(perfil)
+		data, err := getAutorDataFromHTML(filepath.Join(s.WriteToPath, entry.Name()))
+		if err != nil {
+			return err
+		}
+		autor.Cidade = data.Cidade
+		autor.DataCadastro = data.DataCadastro
+		if err := database.CreateAutorTxx(tx, autor); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		log.Fatal("failed to commit tx: " + err.Error())
+	}
+	return nil
+}
+
+func (s *Scrapper) ScrapeAutores() error {
+	entries, err := os.ReadDir(s.WriteToPath)
+	if err != nil {
+		return err
+	}
+	alreadyScrapped := map[string]bool{}
+	for _, entry := range entries {
+		alreadyScrapped[strings.TrimSuffix(entry.Name(), ".html")] = true
+	}
+	tx, err := s.DB.BeginTxx(context.Background(), &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+	autores, err := database.GetAutoresTxx(tx)
+	if err != nil {
+		return err
+	}
+	for _, autor := range autores {
+		log.Println("testing autor: " + autor)
+		if _, ok := alreadyScrapped[autor]; ok {
+			log.Println("autor already exists, skipping")
+			continue
+		}
+		log.Println("scrapping")
+		if err := s.scrapeAutorPage(autor); err != nil {
+			return err
+		}
+		time.Sleep(time.Second / 2)
+	}
+	return nil
+}
+
 func (s *Scrapper) ScrapeHTML() error {
 	const limit = 50
 	for {
@@ -319,6 +383,41 @@ func (s *Scrapper) scrapeAdditionalPageData(id int64, writeToPath string) error 
 	return os.WriteFile(filepath.Join(writeToPath, strconv.Itoa(int(id))+".html"), body, 0777)
 }
 
+func (s *Scrapper) scrapeAutorPage(id string) error {
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", "https://www.wikiaves.com.br/perfil_"+id, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+	req.Header.Set("Cookie", s.AuthCookie)
+	req.Header.Set("DNT", "1")
+	req.Header.Set("Pragma", "no-cache")
+	req.Header.Set("Referer", "https://www.wikiaves.com.br/index.php")
+	req.Header.Set("Sec-Fetch-Dest", "document")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Sec-Fetch-User", "?1")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("sec-ch-ua", `"Not(A:Brand";v="24", "Chromium";v="122"`)
+	req.Header.Set("sec-ch-ua-mobile", "?0")
+	req.Header.Set("sec-ch-ua-platform", `"macOS"`)
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.WriteToPath, id+".html"), body, 0777)
+}
+
 func getAdditionalDataFromHTML(htmlPath string) (*HTMLData, error) {
 	body, err := os.ReadFile(htmlPath)
 	if err != nil {
@@ -364,15 +463,27 @@ func getAdditionalDataFromHTML(htmlPath string) (*HTMLData, error) {
 	return &data, nil
 }
 
-// func Test() error {
-// 	dir, err := os.Getwd()
-// 	if err != nil {
-// 		return err
-// 	}
-// 	additional, err := getAdditionalDataFromHTML(filepath.Join(dir, "scrapped", "4592802.html"))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	log.Printf("\n\n%+v", additional)
-// 	return nil
-// }
+func getAutorDataFromHTML(htmlPath string) (*AutorHTMLData, error) {
+	body, err := os.ReadFile(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	data := AutorHTMLData{}
+	data.Cidade = doc.Find("body > div > div.m-grid__item.m-grid__item--fluid.m-grid.m-grid--ver-desktop.m-grid--desktop.m-body > div > div > div > div > div:nth-child(1) > div > div > div > div > div:nth-child(3) > a.m-card-profile__email.m-link").Text()
+	dataCadastro := doc.Find("h8").Text()
+	log.Println(dataCadastro)
+	dataCadastro = strings.TrimSuffix(strings.TrimPrefix(dataCadastro, "\x0a\x09\x09\x09\x09\x09\x09\x09\x09\x09\x09Data cadastro:  \xc2\xa0"), "\x09\x09\x09\x09\x09\x09\x09\x09\x09")
+	dataCadastro = strings.TrimSuffix(strings.TrimPrefix(dataCadastro, "\x0a\x09\x09\x09\x09\x09\x09\x09\x09\x09\x09\x09Data cadastro:  \xc2\xa0"), "\x09")
+	log.Println(dataCadastro)
+	dataCadastroParsed, err := time.Parse("02/01/2006", dataCadastro)
+	if err != nil {
+		log.Fatal(err)
+	}
+	data.DataCadastro = dataCadastroParsed
+
+	return &data, nil
+}

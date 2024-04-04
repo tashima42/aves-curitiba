@@ -108,6 +108,45 @@ func ScrapperCommand() *cli.Command {
 					// return scrapper.Test()
 				},
 			},
+			{
+				Name: "html-autores",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "db-path",
+						Usage:    "path for the sqlite database",
+						Required: true,
+						Aliases:  []string{"d"},
+						EnvVars:  []string{"DB_PATH"},
+					},
+					&cli.StringFlag{
+						Name:     "write-path",
+						Usage:    "write path",
+						Required: true,
+						Aliases:  []string{"w"},
+						EnvVars:  []string{"WRITE_PATH"},
+					},
+					&cli.StringFlag{
+						Name:     "auth-cookie",
+						Usage:    "wikiaves auth cookie",
+						Required: true,
+						Aliases:  []string{"a"},
+						EnvVars:  []string{"AUTH_COOKIE"},
+					},
+				},
+				Action: func(c *cli.Context) error {
+					db, err := database.Open(c.String("db-path"), false)
+					if err != nil {
+						return err
+					}
+					defer database.Close(db)
+					sc := scrapper.Scrapper{
+						DB:          db,
+						WriteToPath: c.String("write-path"),
+						AuthCookie:  c.String("auth-cookie"),
+					}
+					return sc.ScrapeAutoresHTML()
+				},
+			},
 		},
 	}
 }

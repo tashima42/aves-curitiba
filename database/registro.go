@@ -98,6 +98,24 @@ func GetRegistrosTxx(tx *sqlx.Tx) ([]*Registro, error) {
 	return registros, nil
 }
 
+func GetAutoresTxx(tx *sqlx.Tx) ([]string, error) {
+	autores := []string{}
+	query := "SELECT DISTINCT(perfil) FROM registros_filtered;"
+	rows, err := tx.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var autor string
+		rows.Scan(&autor)
+		autores = append(autores, autor)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return autores, nil
+}
+
 func GetNoLocalRegistros(ctx context.Context, db *sqlx.DB, limit int) ([]*Registro, error) {
 	tx, err := db.BeginTxx(ctx, &sql.TxOptions{})
 	if err != nil {

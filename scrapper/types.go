@@ -56,3 +56,8 @@ type HTMLData struct {
 	LocalNome        string
 	LocalTipo        string
 }
+
+type AutorHTMLData struct {
+	Cidade       string
+	DataCadastro time.Time
+}
